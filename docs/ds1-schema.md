@@ -68,5 +68,5 @@ devtools instead.
 | Marketing carrier code + flight number | **DONE** | `s[22]` (parser extracts to `SingleFlight.airline_code/flight_number/airline_name`) |
 | Per-segment airline | **DONE** | `s[22][3]` display name; `s[22][0]` code also maps via `payload[7][1][1]` |
 | Layover durations | **DONE** | `flight[13]` (parser extracts to `Flights.layovers`) |
-| Round-trip step-2 (pinned outbound) payload shape | TODO | see two-step spike |
+| Round-trip step-2 (pinned outbound) payload shape | **DONE** | identical to step-1 — `parse_js` reads it unchanged. Fetch `/travel/flights/booking?tfs=<pinned-outbound tfs>`; itineraries are the RETURN options priced at the TRUE COMBINED round-trip fare (verified vs live UI, `roundtrip_step2_pinned`) |
 | Multi-city payload shape | TODO | leg-1 options at full multi-city fare (hypothesis) |

@@ -6,7 +6,7 @@ Docs: https://flights.aweird.me/
 
 from . import integrations
 from .exceptions import FlightsNotFound
-from .fetcher import fetch_flights_html, get_flights
+from .fetcher import fetch_flights_html, get_flights, get_flights_from_tfs
 from .model import Layover, SingleFlight
 from .parser import ResultList
 from .querying import (
@@ -26,6 +26,7 @@ __all__ = [
     "create_query",
     "create_filter",
     "get_flights",
+    "get_flights_from_tfs",
     "fetch_flights_html",
     "integrations",
     "FlightsNotFound",

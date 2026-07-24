@@ -88,7 +88,7 @@ def main() -> None:
     ap.add_argument(
         "--path",
         default="flights",
-        choices=["flights", "flights/search"],
+        choices=["flights", "flights/search", "flights/booking"],
         help="which Google Flights page to hit",
     )
     ap.add_argument("--proxy", default=None)

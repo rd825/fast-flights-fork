@@ -55,6 +55,42 @@ def get_flights(
     return parse(html)
 
 
+def get_flights_from_tfs(
+    tfs: str,
+    /,
+    *,
+    language: str = "",
+    currency: str = "",
+    proxy: str | None = None,
+    page: str = "flights",
+) -> ResultList:
+    """Fetch + parse a pre-encoded ``tfs`` (url-safe base64) directly.
+
+    Unlike ``get_flights(str)``, which treats a bare string as a natural-
+    language ``q=`` query, this sends the string as the ``tfs`` parameter —
+    for callers that build their own protobuf beyond what ``create_query``
+    supports (e.g. a pinned-outbound round trip, whose ``page="booking"``
+    response lists the RETURN options priced at the combined fare).
+
+    Args:
+        tfs: The raw tfs value.
+        language / currency: ``hl`` / ``curr`` params ("" lets Google decide).
+        proxy: Optional proxy.
+        page: "flights" (default), "search", or "booking" — which
+            /travel/flights page to request.
+    """
+    suffix = {"flights": "", "search": "/search", "booking": "/booking"}[page]
+    client = Client(
+        impersonate="chrome_145",
+        impersonate_os="macos",
+        referer=True,
+        proxy=proxy,
+        cookie_store=True,
+    )
+    res = client.get(URL + suffix, params={"tfs": tfs, "hl": language, "curr": currency})
+    return parse(res.text)
+
+
 def fetch_flights_html(
     q: Query | str,
     /,
