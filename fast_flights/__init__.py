@@ -7,6 +7,7 @@ Docs: https://flights.aweird.me/
 from . import integrations
 from .exceptions import FlightsNotFound
 from .fetcher import fetch_flights_html, get_flights
+from .model import Layover, SingleFlight
 from .parser import ResultList
 from .querying import (
     FlightQuery,
@@ -29,4 +30,6 @@ __all__ = [
     "integrations",
     "FlightsNotFound",
     "ResultList",
+    "Layover",
+    "SingleFlight",
 ]

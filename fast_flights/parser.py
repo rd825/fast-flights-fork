@@ -12,9 +12,23 @@ from .model import (
     CarbonEmission,
     Flights,
     JsMetadata,
+    Layover,
     SimpleDatetime,
     SingleFlight,
 )
+
+
+def _safe_index(seq, *path):
+    """Walk nested list indices, returning None on any miss instead of raising.
+
+    Google occasionally omits trailing/optional entries, so enrichment fields
+    must degrade to None rather than kill the whole parse."""
+    cur = seq
+    for i in path:
+        if not isinstance(cur, list) or len(cur) <= i:
+            return None
+        cur = cur[i]
+    return cur
 
 
 class ResultList(list[Flights]):
@@ -43,9 +57,12 @@ def parse_js(js: str):
     alliances = []
     airlines = []
 
+    # No-service routes ship a truncated payload with no airline/alliance
+    # metadata (and no itineraries) — treat that as an empty result, not a
+    # crash (see docs/ds1-schema.md, "Known shape variants").
     (alliances_data, airlines_data) = (
-        payload[7][1][0],
-        payload[7][1][1],
+        _safe_index(payload, 7, 1, 0) or [],
+        _safe_index(payload, 7, 1, 1) or [],
     )
 
     for code, name in alliances_data:
@@ -57,7 +74,8 @@ def parse_js(js: str):
     meta = JsMetadata(alliances=alliances, airlines=airlines)
 
     flights = ResultList()
-    if payload[3][0] is None:
+    if _safe_index(payload, 3, 0) is None:
+        flights.metadata = meta
         return flights
 
     for k in payload[3][0]:
@@ -85,6 +103,15 @@ def parse_js(js: str):
 
             duration = single_flight[11]
 
+            # Marketing carrier + flight number live in a small sub-array:
+            # [22] = [carrier_code, flight_number, ?, carrier_display_name]
+            # e.g. ['AC', '774', None, 'Air Canada']. Optional — degrade to
+            # None so shape drift never kills the parse.
+            carrier = _safe_index(single_flight, 22) or []
+            airline_code = _safe_index(carrier, 0)
+            flight_number = _safe_index(carrier, 1)
+            airline_name = _safe_index(carrier, 3)
+
             sg_flights.append(
                 SingleFlight(
                     from_airport=from_airport,
@@ -93,6 +120,9 @@ def parse_js(js: str):
                     arrival=arrival,
                     duration=duration,
                     plane_type=plane_type,
+                    airline_code=airline_code if isinstance(airline_code, str) else None,
+                    flight_number=flight_number if isinstance(flight_number, str) else None,
+                    airline_name=airline_name if isinstance(airline_name, str) else None,
                 )
             )
 
@@ -100,6 +130,26 @@ def parse_js(js: str):
         extras = flight[22]
         carbon_emission = extras[7]
         typical_carbon_emission = extras[8]
+
+        # Layovers: flight[13] is a list of
+        # [duration_min, airport_code, airport_code, ?, airport_name, ...]
+        # (one per connection), or None for nonstops.
+        layovers = None
+        raw_layovers = _safe_index(flight, 13)
+        if isinstance(raw_layovers, list):
+            layovers = []
+            for lv in raw_layovers:
+                duration_min = _safe_index(lv, 0)
+                code = _safe_index(lv, 1)
+                name = _safe_index(lv, 4)
+                if isinstance(duration_min, int) and isinstance(code, str):
+                    layovers.append(
+                        Layover(
+                            duration=duration_min,
+                            airport_code=code,
+                            airport_name=name if isinstance(name, str) else None,
+                        )
+                    )
 
         flights.append(
             Flights(
@@ -110,6 +160,7 @@ def parse_js(js: str):
                 carbon=CarbonEmission(
                     typical_on_route=typical_carbon_emission, emission=carbon_emission
                 ),
+                layovers=layovers,
             )
         )
 

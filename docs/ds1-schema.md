@@ -33,6 +33,7 @@ devtools instead.
 | `flight[0]` | Type (str / `"multi"`) | `oneway_nonstop` |
 | `flight[1]` | Airline codes (list of str) | `oneway_nonstop` |
 | `flight[2]` | Segments (list; see below) | `oneway_1stop` |
+| `flight[13]` | Layovers, one per connection: `[duration_min, airport_code, airport_code, ?, airport_name, ...]`; `None` for nonstop | `oneway_1stop` (80 min at YUL = the 16:35→17:55 gap) |
 | `flight[22][7]` | Carbon emission (g) | `oneway_nonstop` |
 | `flight[22][8]` | Typical carbon emission on route (g) | `oneway_nonstop` |
 
@@ -50,6 +51,8 @@ devtools instead.
 | `s[21]` | Arrival date `[y, m, d]` | `oneway_nonstop` |
 | `s[11]` | Duration (minutes) | `oneway_nonstop` |
 | `s[17]` | Plane type | `oneway_nonstop` |
+| `s[22]` | Marketing carrier: `[code, flight_number, ?, display_name]`, e.g. `['AC', '774', None, 'Air Canada']` | `oneway_nonstop`, `oneway_1stop` |
+| `s[15]` | Codeshares ("also sold as"): list of the same 4-tuple shape, e.g. `[['UA', '8466', None, 'United']]`; `None` if none | `oneway_1stop` (not extracted yet) |
 
 ## Known shape variants
 
@@ -62,8 +65,8 @@ devtools instead.
 
 | Field | Status | Notes |
 |-------|--------|-------|
-| Marketing carrier code + flight number | TODO | UI shows e.g. "AA 5214"; searchapi integration proves Google exposes it |
-| Per-segment airline (operating carrier) | TODO | map code → name via `payload[7][1][1]` |
-| Layover durations | TODO | possibly itinerary-level; else derive from adjacent segments |
+| Marketing carrier code + flight number | **DONE** | `s[22]` (parser extracts to `SingleFlight.airline_code/flight_number/airline_name`) |
+| Per-segment airline | **DONE** | `s[22][3]` display name; `s[22][0]` code also maps via `payload[7][1][1]` |
+| Layover durations | **DONE** | `flight[13]` (parser extracts to `Flights.layovers`) |
 | Round-trip step-2 (pinned outbound) payload shape | TODO | see two-step spike |
 | Multi-city payload shape | TODO | leg-1 options at full multi-city fare (hypothesis) |
