@@ -37,6 +37,81 @@ class ResultList(list[Flights]):
     metadata: JsMetadata
 
 
+def _build_single_flight(single_flight) -> SingleFlight:
+    """One segment array -> SingleFlight. The segment schema is identical in
+    the embedded ds:1 payload and the FlightsFrontendService RPC response, so
+    both paths share this."""
+    from_airport = Airport(code=single_flight[3], name=single_flight[4])
+    to_airport = Airport(code=single_flight[6], name=single_flight[5])
+    departure = SimpleDatetime(date=single_flight[20], time=single_flight[8])
+    arrival = SimpleDatetime(date=single_flight[21], time=single_flight[10])
+
+    # Marketing carrier + flight number live in a small sub-array:
+    # [22] = [carrier_code, flight_number, ?, carrier_display_name]
+    # e.g. ['AC', '774', None, 'Air Canada']. Optional — degrade to
+    # None so shape drift never kills the parse.
+    carrier = _safe_index(single_flight, 22) or []
+    airline_code = _safe_index(carrier, 0)
+    flight_number = _safe_index(carrier, 1)
+    airline_name = _safe_index(carrier, 3)
+
+    return SingleFlight(
+        from_airport=from_airport,
+        to_airport=to_airport,
+        departure=departure,
+        arrival=arrival,
+        duration=single_flight[11],
+        plane_type=single_flight[17],
+        airline_code=airline_code if isinstance(airline_code, str) else None,
+        flight_number=flight_number if isinstance(flight_number, str) else None,
+        airline_name=airline_name if isinstance(airline_name, str) else None,
+    )
+
+
+def build_flights(flight, price) -> Flights:
+    """A flight detail array (``k[0]`` in ds:1, ``row[0]`` in the RPC) + its
+    price -> a ``Flights`` itinerary. Shared by the HTML and RPC parsers.
+
+    ``price`` may be ``None`` (the RPC omits an aggregate price for some
+    premium-cabin rows); callers decide how to treat that."""
+    sg_flights = [_build_single_flight(sf) for sf in flight[2]]
+
+    extras = _safe_index(flight, 22) or []
+    carbon = CarbonEmission(
+        typical_on_route=_safe_index(extras, 8),
+        emission=_safe_index(extras, 7),
+    )
+
+    # Layovers: flight[13] is a list of
+    # [duration_min, airport_code, airport_code, ?, airport_name, ...]
+    # (one per connection), or None for nonstops.
+    layovers = None
+    raw_layovers = _safe_index(flight, 13)
+    if isinstance(raw_layovers, list):
+        layovers = []
+        for lv in raw_layovers:
+            duration_min = _safe_index(lv, 0)
+            code = _safe_index(lv, 1)
+            name = _safe_index(lv, 4)
+            if isinstance(duration_min, int) and isinstance(code, str):
+                layovers.append(
+                    Layover(
+                        duration=duration_min,
+                        airport_code=code,
+                        airport_name=name if isinstance(name, str) else None,
+                    )
+                )
+
+    return Flights(
+        type=flight[0],
+        price=price,
+        airlines=flight[1],
+        flights=sg_flights,
+        carbon=carbon,
+        layovers=layovers,
+    )
+
+
 def parse(html: str) -> ResultList:
     parser = LexborHTMLParser(html)
 
@@ -79,90 +154,7 @@ def parse_js(js: str):
         return flights
 
     for k in payload[3][0]:
-        flight = k[0]
-        price = k[1][0][1]
-
-        typ = flight[0]
-        airlines = flight[1]
-
-        sg_flights = []
-
-        # multiple flights!
-        for single_flight in flight[2]:
-            from_airport = Airport(code=single_flight[3], name=single_flight[4])
-            to_airport = Airport(code=single_flight[6], name=single_flight[5])
-            departure_time = single_flight[8]
-            departure_date = single_flight[20]
-            departure = SimpleDatetime(date=departure_date, time=departure_time)
-
-            arrival_time = single_flight[10]
-            arrival_date = single_flight[21]
-            arrival = SimpleDatetime(date=arrival_date, time=arrival_time)
-
-            plane_type = single_flight[17]
-
-            duration = single_flight[11]
-
-            # Marketing carrier + flight number live in a small sub-array:
-            # [22] = [carrier_code, flight_number, ?, carrier_display_name]
-            # e.g. ['AC', '774', None, 'Air Canada']. Optional — degrade to
-            # None so shape drift never kills the parse.
-            carrier = _safe_index(single_flight, 22) or []
-            airline_code = _safe_index(carrier, 0)
-            flight_number = _safe_index(carrier, 1)
-            airline_name = _safe_index(carrier, 3)
-
-            sg_flights.append(
-                SingleFlight(
-                    from_airport=from_airport,
-                    to_airport=to_airport,
-                    departure=departure,
-                    arrival=arrival,
-                    duration=duration,
-                    plane_type=plane_type,
-                    airline_code=airline_code if isinstance(airline_code, str) else None,
-                    flight_number=flight_number if isinstance(flight_number, str) else None,
-                    airline_name=airline_name if isinstance(airline_name, str) else None,
-                )
-            )
-
-        # some additional data
-        extras = flight[22]
-        carbon_emission = extras[7]
-        typical_carbon_emission = extras[8]
-
-        # Layovers: flight[13] is a list of
-        # [duration_min, airport_code, airport_code, ?, airport_name, ...]
-        # (one per connection), or None for nonstops.
-        layovers = None
-        raw_layovers = _safe_index(flight, 13)
-        if isinstance(raw_layovers, list):
-            layovers = []
-            for lv in raw_layovers:
-                duration_min = _safe_index(lv, 0)
-                code = _safe_index(lv, 1)
-                name = _safe_index(lv, 4)
-                if isinstance(duration_min, int) and isinstance(code, str):
-                    layovers.append(
-                        Layover(
-                            duration=duration_min,
-                            airport_code=code,
-                            airport_name=name if isinstance(name, str) else None,
-                        )
-                    )
-
-        flights.append(
-            Flights(
-                type=typ,
-                price=price,
-                airlines=airlines,
-                flights=sg_flights,
-                carbon=CarbonEmission(
-                    typical_on_route=typical_carbon_emission, emission=carbon_emission
-                ),
-                layovers=layovers,
-            )
-        )
+        flights.append(build_flights(k[0], k[1][0][1]))
 
     flights.metadata = meta
     return flights

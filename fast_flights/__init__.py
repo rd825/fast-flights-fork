@@ -7,6 +7,14 @@ Docs: https://flights.aweird.me/
 from . import integrations
 from .exceptions import FlightsNotFound
 from .fetcher import fetch_flights_html, get_flights, get_flights_from_tfs
+from .getshopping import (
+    MULTI_CITY,
+    ONE_WAY,
+    ROUND_TRIP,
+    PinnedLeg,
+    ShoppingSegment,
+    search_shopping,
+)
 from .model import Layover, SingleFlight
 from .parser import ResultList
 from .querying import (
@@ -33,4 +41,10 @@ __all__ = [
     "ResultList",
     "Layover",
     "SingleFlight",
+    "search_shopping",
+    "ShoppingSegment",
+    "PinnedLeg",
+    "ONE_WAY",
+    "ROUND_TRIP",
+    "MULTI_CITY",
 ]

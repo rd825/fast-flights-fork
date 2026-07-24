@@ -69,4 +69,31 @@ devtools instead.
 | Per-segment airline | **DONE** | `s[22][3]` display name; `s[22][0]` code also maps via `payload[7][1][1]` |
 | Layover durations | **DONE** | `flight[13]` (parser extracts to `Flights.layovers`) |
 | Round-trip step-2 (pinned outbound) payload shape | **DONE** | identical to step-1 — `parse_js` reads it unchanged. Fetch `/travel/flights/booking?tfs=<pinned-outbound tfs>`; itineraries are the RETURN options priced at the TRUE COMBINED round-trip fare (verified vs live UI, `roundtrip_step2_pinned`) |
-| Multi-city payload shape | **NO-GO** | Multi-city results are NEVER embedded: `payload[3]` is `None` on `/travel/flights`, `/search`, and `/booking` (fixtures `multicity_openjaw`, `multicity_openjaw_search`, `multicity_3leg`, `multicity_pinned_leg1` — the last pins leg 1 with trip enum 3), no other `ds:N` script carries them, and even a real browser renders an empty shell for the hand-built pinned type=3 booking URL. Results arrive via an async `batchexecute` XHR only — replicating that protocol (protobuf-in-JSON POST, session tokens) is out of scope. Open-jaw stays a paid-API feature. |
+| Multi-city payload shape | **SOLVED via RPC** | Multi-city results are never embedded in any page (`payload[3]` is `None` on `/travel/flights`, `/search`, `/booking`; fixtures `multicity_*`). They load only via the `GetShoppingResults` RPC — now implemented in `fast_flights/getshopping.py` (see below). |
+
+## GetShoppingResults RPC (`getshopping.py`)
+
+The FlightsFrontendService RPC that the UI calls for results Google won't
+embed (all of multi-city; also drives one-way/round-trip). `POST` to
+`https://www.google.com/_/FlightsFrontendUi/data/travel.frontend.flights.FlightsFrontendService/GetShoppingResults?hl=&curr=`
+with `content-type: application/x-www-form-urlencoded;charset=UTF-8` and body
+`f.req=<url-encoded JSON>`.
+
+- **Request body**: `[null, "<filters JSON>"]` url-encoded. `filters` =
+  `[[], main, sort, all_results, 0, 1]`. `main` index map (the parts we set):
+  `[2]`=trip_type (1 round / 2 one-way / 3 multi-city), `[5]`=seat,
+  `[6]`=`[adults, children, infants_lap, infants_seat]`, `[13]`=segments.
+  Each **segment**: `[0]`=`[[[origin,0]]]`, `[1]`=`[[[dest,0]]]`, `[3]`=max
+  stops, `[6]`=date, **`[8]`=selected/pinned leg** (`[[from,date,to,None,carrier,number],…]`
+  — the two-step combined-fare key), `[14]`=classifier (3).
+- **Response**: JSONP — `)]}'` prefix, then length-prefixed (UTF-8 **byte**
+  counts) `[["wrb.fr", null, "<inner JSON string>"]]` chunks. Flight rows at
+  `inner[2][0]` (best) + `inner[3][0]` (other). Each **row**: `row[0]` = the
+  same flight-detail array as ds:1 `k[0]` (so `build_flights` decodes it
+  unchanged), `row[1][0][-1]` = aggregate price (may be absent → `None`).
+- **Combined fares (multi-city / round-trip)**: two-step. Step 1 = outbound
+  options. Step 2 = re-issue with the chosen outbound pinned in `segment[8]`;
+  the returned next-leg options carry the true combined trip price. Verified
+  live: LAX→MAD .. BCN→LAX open-jaw priced as one $1,125 fare.
+- Protocol cross-checked against the MIT `fli` library (github.com/punitarani/fli).
+  Fixture: `rpc_multicity_leg1.json` (slimmed live response, step 1).
