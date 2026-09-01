@@ -15,11 +15,22 @@ devtools instead.
 
 | Path | Meaning | Fixture |
 |------|---------|---------|
-| `payload[3][0]` | List of itineraries (`None` when no results) | `oneway_nonstop` |
+| `payload[2][0]` | Itineraries — **"Top departing flights"**, Google's curated list (`None`/absent when the page has no curated set, e.g. the pinned booking page) | `oneway_nonstop` |
+| `payload[3][0]` | Itineraries — **"Other departing flights"** (`None` when no results) | `oneway_nonstop` |
 | `payload[7][1][0]` | Alliances: `[code, name]` pairs | `oneway_nonstop` |
 | `payload[7][1][1]` | Airlines: `[code, name]` pairs | `oneway_nonstop` |
 
-## Per itinerary `k = payload[3][0][i]`
+**Read BOTH itinerary buckets.** They are disjoint — the "other" list excludes
+everything already in the curated one (checked across every fixture here), so
+concatenating them in page order needs no de-duplication. Reading only
+`payload[3][0]` silently drops the curated results, which routinely hold the
+cheapest and simplest fares: on SLC→CUR 2027-02-24 the only 1-stop, single-carrier
+fare (American, $869) lived exclusively in `payload[2][0]`, while `payload[3][0]`
+offered nothing better than a $1,481 1-stop and a spread of 2-stop itineraries.
+The `GetShoppingResults` RPC uses the same two-bucket split at `inner[2][0]` /
+`inner[3][0]` (see below).
+
+## Per itinerary `k = payload[2][0][i]` / `payload[3][0][i]`
 
 | Path | Meaning | Fixture |
 |------|---------|---------|
@@ -60,6 +71,10 @@ devtools instead.
   (~3.5 KB) and `payload[7][1]` has no airlines entry at index 1, so
   `parse_js` currently dies with `IndexError` before reaching the
   itinerary check. Parser should treat missing metadata as "no results".
+- **No curated bucket** (`roundtrip_step2_pinned`): the pinned-outbound
+  booking page ships `payload[3][0]` only — there is no `payload[2]`. Either
+  bucket being absent must degrade to "no itineraries from that bucket",
+  never to an empty overall result or a crash.
 
 ## Wanted (parity work) — indices to discover
 

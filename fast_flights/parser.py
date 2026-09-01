@@ -148,13 +148,21 @@ def parse_js(js: str):
 
     meta = JsMetadata(alliances=alliances, airlines=airlines)
 
+    # Google splits itineraries into TWO buckets, in the order the page shows
+    # them: payload[2][0] is the curated "Top departing flights" list and
+    # payload[3][0] is "Other departing flights". BOTH must be read — the two
+    # are disjoint (verified across every captured fixture, so concatenating
+    # needs no de-duplication), and the curated bucket routinely holds the
+    # cheapest/simplest fares. Reading only [3] silently drops them.
+    #
+    # Either bucket can be absent: the pinned-outbound booking page ships no
+    # [2], and no-service routes ship a truncated payload with neither (see
+    # docs/ds1-schema.md, "Known shape variants"). Missing => empty, not a
+    # crash.
     flights = ResultList()
-    if _safe_index(payload, 3, 0) is None:
-        flights.metadata = meta
-        return flights
-
-    for k in payload[3][0]:
-        flights.append(build_flights(k[0], k[1][0][1]))
+    for bucket in (2, 3):
+        for k in _safe_index(payload, bucket, 0) or []:
+            flights.append(build_flights(k[0], k[1][0][1]))
 
     flights.metadata = meta
     return flights
